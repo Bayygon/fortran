@@ -1,0 +1,1629 @@
+program perhitungan_parameter_oseanografi
+
+implicit none
+
+call conductivity_to_salinity()			!Sub Program 1
+call salinity_to_conductivity_ratio()	!Sub Program 2
+call seawater_density_and_svolume		!Sub Program 3
+call Pressure_To_Depth_Conversion()		!Sub Program 4
+call freezing_point_seawater()			!Sub Program 5
+call specific_heat_of_seawater()		!Sub Program 6
+call adiabatic_lapse_rate()				!Sub Program 7
+call potential_temperature()			!Sub Program 8
+call sound_speed_seawater()				!Sub Program 9
+
+contains
+	!*********************************************************************************************************** 
+	!===========================================================================================================
+	!--------------------------SUB PROGRAM 1: CONDUCTIVITY TO SALINITY CONVERSION-------------------------------	
+	!===========================================================================================================		
+	!***********************************************************************************************************
+
+	subroutine conductivity_to_salinity
+		implicit none
+    
+		real(8), allocatable :: R(:), t(:), p(:), S(:), Rp(:), Rt(:), rt_val(:)
+		real(8) :: deltaS
+		real(8) :: c0, c1, c2, c3, c4
+		real(8) :: e1, e2, e3, d1, d2, d3, d4
+		real(8) :: a0, a1, a2, a3, a4, a5
+		real(8) :: b0, b1, b2, b3, b4, b5, k
+		integer :: n, i
+    
+		! Input jumlah konversi
+		print *, '==========================================='
+		print *, 'CONDUCTIVITY TO SALINITY RATIO CONVERSION'
+		print *, '==========================================='
+
+		print *, 'Berapa kali konversi yang ingin dilakukan?'
+		read *, n
+		print *, ''
+    
+		! Alokasi array
+		allocate(R(n), t(n), p(n), S(n), Rp(n), Rt(n), rt_val(n))
+    
+		! Input semua data
+		do i = 1, n
+			write(*, '(A,I0,A)') 'Data ke-', i, ':'
+			print *, 'Enter R:'
+			read *, R(i)
+			print *, 'Enter t (°C):'
+			read *, t(i)
+			print *, 'Enter p (dbars):'
+			read *, p(i)
+			print *, ''
+		end do
+    
+		! Hitung semua konversi
+		do i = 1, n
+			! Calculate rt(t) - Equation (3)
+			c0 = 0.6766097d0
+			c1 = 2.00564d-2
+			c2 = 1.104259d-4
+			c3 = -6.9698d-7
+			c4 = 1.0031d-9
+			rt_val(i) = c0 + c1*t(i) + c2*t(i)**2 + c3*t(i)**3 + c4*t(i)**4
+        
+			! Calculate Rp(p,t) - Equation (4)
+			e1 = 2.070d-5
+			e2 = -6.370d-10
+			e3 = 3.989d-15
+			d1 = 3.426d-2
+			d2 = 4.464d-4
+			d3 = 4.215d-1
+			d4 = -3.107d-3
+			Rp(i) = 1.0d0 + (p(i)*(e1 + e2*p(i) + e3*p(i)**2)) / &
+					(1.0d0 + d1*t(i) + d2*t(i)**2 + (d3 + d4*t(i))*R(i))
+        
+			! Calculate Rt
+			Rt(i) = R(i) / (Rp(i) * rt_val(i))
+        
+			! Calculate Salinity - Equations (1) and (2)
+			a0 = 0.0080d0
+			a1 = -0.1692d0
+			a2 = 25.3851d0
+			a3 = 14.0941d0
+			a4 = -7.0261d0
+			a5 = 2.7081d0
+        
+			b0 = 0.0005d0
+			b1 = -0.0056d0
+			b2 = -0.0066d0
+			b3 = -0.0375d0
+			b4 = 0.0636d0
+			b5 = -0.0144d0
+			k = 0.0162d0
+        
+			S(i) = a0 + a1*sqrt(Rt(i)) + a2*Rt(i) + a3*Rt(i)**1.5d0 + &
+				   a4*Rt(i)**2 + a5*Rt(i)**2.5d0
+        
+			deltaS = ((t(i) - 15.0d0) / (1.0d0 + k*(t(i) - 15.0d0))) * &
+					 (b0 + b1*sqrt(Rt(i)) + b2*Rt(i) + b3*Rt(i)**1.5d0 + &
+					  b4*Rt(i)**2 + b5*Rt(i)**2.5d0)
+        
+			S(i) = S(i) + deltaS
+		end do
+    
+		! Output tabel hasil
+		print 20
+		write(*, '(2X, A, A14, A13, A11, A12, A11, A14)') 'R', 't(°C)', 'p(dbars)', 'Rp', 'rt', 'Rt', 'S(PSU)'
+		print 20
+    
+		do i = 1, n
+			write(*, '(F5.2, F12.2, F12.2, F12.2, F12.2, F12.2, F12.2)') &
+				  R(i), t(i), p(i), Rp(i), rt_val(i), Rt(i), S(i)
+		end do
+    
+		print 20
+    
+		! Dealokasi array
+		deallocate(R, t, p, S, Rp, Rt, rt_val)
+
+	20	format(80('='))
+
+	end subroutine conductivity_to_salinity
+
+	!*********************************************************************************************************** 
+	!===========================================================================================================
+	!--------------------------SUB PROGRAM 2: SALINITY TO CONDUCTIVITY CONVERSION-------------------------------	
+	!===========================================================================================================		
+	!***********************************************************************************************************
+
+	subroutine salinity_to_conductivity_ratio
+		implicit none
+    
+		! Deklarasi variabel
+		real*8, dimension(100) :: S_input, T_input, Rt_result, R_result
+		real*8 :: Rt, Rt_new, S_calc, dS_dRt, diff
+		real*8 :: rt_val, A, B, C
+		real*8 :: a0, a1, a2, a3, a4, a5
+		real*8 :: c0, c1, c2, c3, c4
+		integer :: n, i, iter
+		integer :: max_iter
+		real*8 :: tolerance
+    
+		! Koefisien untuk rt(T) - persamaan (2)
+		c0 = 0.6766097
+		c1 = 2.00564e-2
+		c2 = 1.104259e-4
+		c3 = -6.9698e-7
+		c4 = 1.0031e-9
+    
+		! Koefisien untuk S(Rt, T) - persamaan (3)
+		a0 = 0.0080
+		a1 = -0.1692
+		a2 = 25.3851
+		a3 = 14.0941
+		a4 = -7.0261
+		a5 = 2.7081
+    
+		! Parameter iterasi
+		max_iter = 100
+		tolerance = 1.0e-8
+    
+		! Input jumlah data
+		print *, '========================================================'
+		print *, 'SALINITY TO CONDUCTIVITY RATIO CONVERSION'
+		print *, 'Newton-Raphson Iteration Method'
+		print *, '========================================================'
+		print *, ''
+		print *, 'Jumlah data yang akan diinput: '
+		read *, n
+		print *, ''
+    
+		! Input semua data di awal
+		do i = 1, n
+			print *, 'Data ke-', i, ':'
+			print *, ' Masukkan S (Salinitas, PSU): '
+			read *, S_input(i)
+			print *, ' Masukkan T (Suhu, C): '
+			read *, T_input(i)
+			print *, ''
+		end do
+    
+		! Proses perhitungan Newton-Raphson untuk semua data
+		do i = 1, n
+			! Initial guess untuk Rt
+			Rt = 1.0
+        
+			! Newton-Raphson iteration
+			do iter = 1, max_iter
+				! Hitung S menggunakan Rt saat ini
+				S_calc = a0 + a1*Rt**0.5 + a2*Rt + a3*Rt**1.5
+				S_calc = S_calc + a4*Rt**2 + a5*Rt**2.5
+            
+				! Hitung turunan dS/dRt
+				dS_dRt = 0.5*a1*Rt**(-0.5) + a2 + 1.5*a3*Rt**0.5
+				dS_dRt = dS_dRt + 2.0*a4*Rt + 2.5*a5*Rt**1.5
+            
+				! Hitung perbedaan
+				diff = S_input(i) - S_calc
+            
+				! Update Rt menggunakan Newton-Raphson
+				Rt_new = Rt + diff / dS_dRt
+            
+				! Cek konvergensi
+				if (abs(Rt_new - Rt) .lt. tolerance) then
+					exit
+				end if
+            
+				Rt = Rt_new
+			end do
+        
+			! Simpan hasil Rt
+			Rt_result(i) = Rt
+        
+			! Hitung rt(T)
+			rt_val = c0 + c1*T_input(i) + c2*T_input(i)**2
+			rt_val = rt_val + c3*T_input(i)**3 + c4*T_input(i)**4
+        
+			! Hitung R dari Rt dan rt(T)
+			R_result(i) = Rt * rt_val
+		end do
+    
+		! Tampilkan semua hasil dalam satu tabel
+		print *, '------------------------------------------------------------'
+		print *, '  S (PSU)       T (C)         Rt            R (ratio)'
+		print *, '------------------------------------------------------------'
+    
+		do i = 1, n
+			write(*,100) S_input(i), T_input(i), Rt_result(i), R_result(i)
+	100     format(1X,F9.4,5X,F9.4,5X,F10.6,5X,F10.6)
+		end do
+    
+		print *, '------------------------------------------------------------'
+    
+	end subroutine salinity_to_conductivity_ratio
+
+	!*********************************************************************************************************** 
+	!===========================================================================================================
+	!-----------------SUB PROGRAM 3: SPECIFIC VOLUME ANOMALY AND DENSITY ANOMALY OF SEAWATER--------------------
+	!===========================================================================================================		
+	!***********************************************************************************************************
+
+	subroutine seawater_density_and_svolume
+		IMPLICIT NONE
+		INTEGER, PARAMETER :: DP = KIND(1.0D0)
+		INTEGER :: i, j, k
+		INTEGER :: nS, nT, nP
+		REAL(DP), ALLOCATABLE :: S(:), T(:), P(:)
+		REAL(DP) :: rho, rho0, K_bulk, P_bar, rho_ref, v, v_ref, sva, sigma
+
+		! INPUT DATA
+		PRINT *, '=========================================================='
+		PRINT *, '  SPECIFIC VOLUME ANOMALY AND DENSITY ANOMALY'
+		PRINT *, '=========================================================='
+		PRINT *
+		PRINT *, 'Number of salinity values:'
+		READ *, nS
+		ALLOCATE(S(nS))
+		READ *, S
+		PRINT *
+		PRINT *, 'DAFTAR SALINITAS YANG DIINPUT:'
+		DO i = 1, nS
+			WRITE(*,'(A,I2,A,F6.1)') 'Salinitas ke-', i, ' = ', S(i)
+		END DO
+
+		PRINT *, 'Number of temperature values:'
+		READ *, nT
+		ALLOCATE(T(nT))
+		READ *, T
+		PRINT *
+		PRINT *, 'DAFTAR TEMPERATUR YANG DIINPUT (°C):'
+		DO i = 1, nT
+			WRITE(*,'(A,I2,A,F6.1)') 'Temperatur ke-', i, ' = ', T(i)
+		END DO
+
+		PRINT *, 'Number of pressure values (dbar):'
+		READ *, nP
+		ALLOCATE(P(nP))
+		READ *, P
+		PRINT *
+		PRINT *, 'DAFTAR TEKANAN YANG DIINPUT (dbar):'
+		DO i = 1, nP
+			WRITE(*,'(A,I2,A,F8.1)') 'Tekanan ke-', i, ' = ', P(i)
+		END DO
+
+		!==========================================================
+		! 1. SPECIFIC VOLUME ANOMALY δ (UNESCO)
+		! Reference: S=35, T=0, same pressure
+		!==========================================================
+		PRINT *
+		PRINT *, '============================================'
+		PRINT *, ' SPECIFIC VOLUME ANOMALY δ (10^-8 m^3/kg)'
+		PRINT *, '============================================'
+
+		DO k = 1, nS
+			WRITE(*,'(A,F6.1)') 'SALINITY: ', S(k)
+			
+			! Print header
+			PRINT *
+			PRINT '(A)', 'PRESSURE   TEMPERATURE (C IPTS-68)'
+			WRITE(*,'(A)', ADVANCE='NO') 'DECIBARS '
+			DO j = 1, nT
+				WRITE(*,'(F9.1)', ADVANCE='NO') T(j)
+			END DO
+			PRINT *
+			PRINT '(A)', '-----------------------------------------------------------'
+
+			DO i = 1, nP
+				WRITE(*,'(I6)', ADVANCE='NO') INT(P(i))
+				DO j = 1, nT
+					! Calculate density at (S, T, P)
+					P_bar = 0.1D0 * P(i)
+					rho0 = 999.842594D0 + 6.793952D-2*T(j) - 9.095290D-3*T(j)**2 + &
+						1.001685D-4*T(j)**3 - 1.120083D-6*T(j)**4 + 6.536332D-9*T(j)**5 + &
+						S(k)*(0.824493D0 - 4.0899D-3*T(j) + 7.6438D-5*T(j)**2 - &
+						8.2467D-7*T(j)**3 + 5.3875D-9*T(j)**4) + &
+						S(k)**1.5*(-5.72466D-3 + 1.0227D-4*T(j) - 1.6546D-6*T(j)**2) + &
+						4.8314D-4*S(k)**2
+					
+					K_bulk = 19652.21D0 + 148.4206D0*T(j) - 2.327105D0*T(j)**2 + &
+						1.360477D-2*T(j)**3 - 5.155288D-5*T(j)**4 + &
+						S(k)*(54.6746D0 - 0.603459D0*T(j) + 1.09987D-2*T(j)**2 - &
+						6.1670D-5*T(j)**3) + &
+						S(k)**1.5*(7.944D0 + 1.6483D-2*T(j) - 5.3009D-4*T(j)**2) + &
+						(3.239908D0 + 1.43713D-3*T(j) + 1.16092D-4*T(j)**2 - &
+						5.77905D-7*T(j)**3)*P_bar + &
+						(2.2838D-3 - 1.0981D-5*T(j) - 1.6078D-6*T(j)**2)*P_bar**2 + &
+						1.91075D-4*P_bar**3
+					
+					rho = rho0 / (1.0D0 - P_bar / K_bulk)
+					v = 1.0D0 / rho
+					
+					! Calculate reference density at (S=35, T=0, P)
+					P_bar = 0.1D0 * P(i)
+					rho0 = 999.842594D0 + 35.0D0*0.824493D0 + &
+						35.0D0**1.5*(-5.72466D-3) + 4.8314D-4*35.0D0**2
+					
+					K_bulk = 19652.21D0 + 35.0D0*54.6746D0 + 35.0D0**1.5*7.944D0 + &
+						3.239908D0*P_bar + 2.2838D-3*P_bar**2 + 1.91075D-4*P_bar**3
+					
+					rho_ref = rho0 / (1.0D0 - P_bar / K_bulk)
+					v_ref = 1.0D0 / rho_ref
+					
+					sva = (v - v_ref) * 1.0D8
+					WRITE(*,'(F9.2)', ADVANCE='NO') sva
+				END DO
+				PRINT *
+			END DO
+			PRINT *
+		END DO
+
+		!==========================================================
+		! 2. DENSITY ANOMALY σ (UNESCO / OCEANOGRAPHIC)
+		! σ = ρ(S,T,P) − 1000
+		!==========================================================
+		PRINT *
+		PRINT *, '============================================'
+		PRINT *, ' DENSITY ANOMALY σ (kg/m^3)'
+		PRINT *, '============================================'
+
+		DO k = 1, nS
+			WRITE(*,'(A,F6.1)') 'SALINITY: ', S(k)
+			
+			! Print header
+			PRINT *
+			PRINT '(A)', 'PRESSURE   TEMPERATURE (C IPTS-68)'
+			WRITE(*,'(A)', ADVANCE='NO') 'DECIBARS '
+			DO j = 1, nT
+				WRITE(*,'(F9.1)', ADVANCE='NO') T(j)
+			END DO
+			PRINT *
+			PRINT '(A)', '-----------------------------------------------------------'
+
+			DO i = 1, nP
+				WRITE(*,'(I6)', ADVANCE='NO') INT(P(i))
+				DO j = 1, nT
+					! Calculate density at (S, T, P)
+					P_bar = 0.1D0 * P(i)
+					rho0 = 999.842594D0 + 6.793952D-2*T(j) - 9.095290D-3*T(j)**2 + &
+						1.001685D-4*T(j)**3 - 1.120083D-6*T(j)**4 + 6.536332D-9*T(j)**5 + &
+						S(k)*(0.824493D0 - 4.0899D-3*T(j) + 7.6438D-5*T(j)**2 - &
+						8.2467D-7*T(j)**3 + 5.3875D-9*T(j)**4) + &
+						S(k)**1.5*(-5.72466D-3 + 1.0227D-4*T(j) - 1.6546D-6*T(j)**2) + &
+						4.8314D-4*S(k)**2
+					
+					K_bulk = 19652.21D0 + 148.4206D0*T(j) - 2.327105D0*T(j)**2 + &
+						1.360477D-2*T(j)**3 - 5.155288D-5*T(j)**4 + &
+						S(k)*(54.6746D0 - 0.603459D0*T(j) + 1.09987D-2*T(j)**2 - &
+						6.1670D-5*T(j)**3) + &
+						S(k)**1.5*(7.944D0 + 1.6483D-2*T(j) - 5.3009D-4*T(j)**2) + &
+						(3.239908D0 + 1.43713D-3*T(j) + 1.16092D-4*T(j)**2 - &
+						5.77905D-7*T(j)**3)*P_bar + &
+						(2.2838D-3 - 1.0981D-5*T(j) - 1.6078D-6*T(j)**2)*P_bar**2 + &
+						1.91075D-4*P_bar**3
+					
+					rho = rho0 / (1.0D0 - P_bar / K_bulk)
+					sigma = rho - 1000.0D0
+					WRITE(*,'(F9.4)', ADVANCE='NO') sigma
+				END DO
+				PRINT *
+			END DO
+			PRINT *
+		END DO
+
+		!==========================================================
+		! 3. SPECIFIC VOLUME v (UNESCO)
+		!==========================================================
+		PRINT *
+		PRINT *, '============================================'
+		PRINT *, ' SPECIFIC VOLUME v (10^-3 m^3/kg)'
+		PRINT *, '============================================'
+
+		DO k = 1, nS
+			WRITE(*,'(A,F6.1)') 'SALINITY: ', S(k)
+			
+			! Print header
+			PRINT *
+			PRINT '(A)', 'PRESSURE   TEMPERATURE (C IPTS-68)'
+			WRITE(*,'(A)', ADVANCE='NO') 'DECIBARS '
+			DO j = 1, nT
+				WRITE(*,'(F9.1)', ADVANCE='NO') T(j)
+			END DO
+			PRINT *
+			PRINT '(A)', '-----------------------------------------------------------'
+
+			DO i = 1, nP
+				WRITE(*,'(I6)', ADVANCE='NO') INT(P(i))
+				DO j = 1, nT
+					! Calculate density at (S, T, P)
+					P_bar = 0.1D0 * P(i)
+					rho0 = 999.842594D0 + 6.793952D-2*T(j) - 9.095290D-3*T(j)**2 + &
+						1.001685D-4*T(j)**3 - 1.120083D-6*T(j)**4 + 6.536332D-9*T(j)**5 + &
+						S(k)*(0.824493D0 - 4.0899D-3*T(j) + 7.6438D-5*T(j)**2 - &
+						8.2467D-7*T(j)**3 + 5.3875D-9*T(j)**4) + &
+						S(k)**1.5*(-5.72466D-3 + 1.0227D-4*T(j) - 1.6546D-6*T(j)**2) + &
+						4.8314D-4*S(k)**2
+					
+					K_bulk = 19652.21D0 + 148.4206D0*T(j) - 2.327105D0*T(j)**2 + &
+						1.360477D-2*T(j)**3 - 5.155288D-5*T(j)**4 + &
+						S(k)*(54.6746D0 - 0.603459D0*T(j) + 1.09987D-2*T(j)**2 - &
+						6.1670D-5*T(j)**3) + &
+						S(k)**1.5*(7.944D0 + 1.6483D-2*T(j) - 5.3009D-4*T(j)**2) + &
+						(3.239908D0 + 1.43713D-3*T(j) + 1.16092D-4*T(j)**2 - &
+						5.77905D-7*T(j)**3)*P_bar + &
+						(2.2838D-3 - 1.0981D-5*T(j) - 1.6078D-6*T(j)**2)*P_bar**2 + &
+						1.91075D-4*P_bar**3
+					
+					rho = rho0 / (1.0D0 - P_bar / K_bulk)
+					WRITE(*,'(F10.7)', ADVANCE='NO') (1.0D0 / rho) * 1.0D3
+				END DO
+				PRINT *
+			END DO
+			PRINT *
+		END DO
+
+		DEALLOCATE(S, T, P)
+
+	end subroutine seawater_density_and_svolume
+
+	!*********************************************************************************************************** 
+	!===========================================================================================================
+	!----------------------------SUB PROGRAM 4: PRESSURE TO DEPTH CONVERSION------------------------------------	
+	!===========================================================================================================		
+	!***********************************************************************************************************
+
+	subroutine Pressure_To_Depth_Conversion
+	IMPLICIT NONE
+
+	INTEGER :: i, j, N
+	REAL :: LAT, X, GR, DEPTH
+	REAL, DIMENSION(5) :: LAT_LIST
+	REAL, DIMENSION(5) :: Z
+	REAL, ALLOCATABLE :: P(:)
+
+	! Daftar lintang (derajat)
+	LAT_LIST = (/ 0.0, 30.0, 45.0, 60.0, 90.0 /)
+
+	print *, '==================================================================='
+	print *, '                 PRESSURE TO DEPTH CONVERSION'
+	print *, '==================================================================='
+	PRINT *
+	PRINT *, 'Berapa jumlah tekanan (decibar) yang akan dihitung?'
+	READ *, N
+
+	ALLOCATE(P(N))
+
+	PRINT *
+	PRINT *, 'Masukkan tekanan dalam satuan decibar:'
+	DO i = 1, N
+	   WRITE(*,'(A,I0,A)') 'Tekanan ke-', i, ' :'
+	   READ *, P(i)
+	END DO
+
+	PRINT *
+	PRINT *, '                      TABLE OF DEPTH (METERS)'
+	PRINT *, '==================================================================='
+	PRINT *, '                        LATITUDE (DERAJAT)'
+	PRINT *, 'PRESSURE        0          30          45           60         90 '
+	PRINT *, 'DECIBARS'
+
+	! Loop tekanan dari input pengguna
+	DO j = 1, N
+
+	   DO i = 1, 5
+
+		  LAT = LAT_LIST(i)
+
+		  ! Konversi lintang ke radian
+		  X = SIN(LAT / 57.29578)
+		  X = X * X
+
+		  ! Gravitasi sebagai fungsi lintang (m/s^2)
+		  GR = 9.780318 * (1.0 + 5.2788E-3 * X + 2.36E-5 * X * X)
+
+		  ! Polinomial Saunders & Fofonoff (EOS-80 refit)
+		  DEPTH = (((-1.82E-15 * P(j) + 2.279E-10) * P(j) - 2.2512E-5) * P(j) + 9.72659) * P(j)
+
+		  ! Koreksi gravitasi
+		  Z(i) = DEPTH / GR
+
+	   END DO
+
+	   WRITE(*,'(1X,F8.1,5F12.2)') P(j), Z(1), Z(2), Z(3), Z(4), Z(5)
+
+	END DO
+
+	PRINT *, '==================================================================='
+
+	DEALLOCATE(P)
+    
+    END SUBROUTINE Pressure_To_Depth_Conversion
+
+	!*********************************************************************************************************** 
+	!===========================================================================================================
+	!------------------------SUB PROGRAM 5: FREEZING POINT TEMPERATURE OF SEAWATER------------------------------	
+	!===========================================================================================================		
+	!***********************************************************************************************************
+
+	subroutine freezing_point_seawater
+		implicit none
+    
+		! Deklarasi variabel
+		integer :: n_exp, i, j, n_sal, n_pres
+		real :: a0, a1, a2, b
+		real, allocatable :: salinity(:), pressure(:), tf(:,:)
+    
+		! Koefisien formula
+		a0 = -0.0575
+		a1 = 1.710523E-3
+		a2 = -2.154996E-4
+		b = -7.53E-4
+    
+		! Header program
+		print *, "==========================================================================="
+		print *, "            FREEZING POINT TEMPERATURE OF SEAWATER CALCULATOR"
+		print *, "==========================================================================="
+		print *
+    
+		! Input jumlah percobaan
+		print *, "Masukkan jumlah percobaan/konversi:"
+		read *, n_exp
+    
+		n_sal = n_exp
+		n_pres = n_exp
+    
+		! Alokasi array
+		allocate(salinity(n_sal))
+		allocate(pressure(n_pres))
+		allocate(tf(n_pres, n_sal))
+    
+		! Input nilai salinity
+		print *
+		print *, "========== INPUT NILAI SALINITY (PSS-78) =========="
+		do i = 1, n_sal
+			print *, "Salinity ke-", i, ":"
+			read *, salinity(i)
+		end do
+    
+		! Input nilai pressure
+		print *
+		print *, "========== INPUT NILAI PRESSURE (decibars) =========="
+		do i = 1, n_pres
+			print *, "Pressure ke-", i, ":"
+			read *, pressure(i)
+		end do
+    
+		! Hitung freezing point temperature untuk setiap kombinasi
+		do i = 1, n_pres
+			do j = 1, n_sal
+				tf(i,j) = a0 * salinity(j) + &
+						  a1 * salinity(j)**(3.0/2.0) + &
+						  a2 * salinity(j)**2 + &
+						  b * pressure(i)
+			end do
+		end do
+    
+		! Tampilkan hasil dalam bentuk tabel
+		print *
+    
+		! Cetak garis atas
+		do i = 1, (n_sal + 1) * 20
+			write(*, '(A)', advance='no') "="
+		end do
+		print *
+    
+		write(*, '(A)', advance='no') " "
+		do i = 1, ((n_sal + 1) * 20 - 20) / 2
+			write(*, '(A)', advance='no') " "
+		end do
+		print *, "HASIL PERHITUNGAN"
+    
+		do i = 1, (n_sal + 1) * 20
+			write(*, '(A)', advance='no') "="
+		end do
+		print *
+		print *
+    
+		! Header tabel baris pertama
+		write(*, '(A20)', advance='no') "preccure"
+		do j = 1, n_sal
+			write(*, '(A20)', advance='no') "salinitas"
+		end do
+		print *
+    
+		! Header tabel baris kedua
+		write(*, '(A20)', advance='no') "decibars"
+		do j = 1, n_sal
+			write(*, '(F20.2)', advance='no') salinity(j)
+		end do
+		print *
+    
+		! Cetak garis pemisah (menyesuaikan panjang tabel)
+		do i = 1, (n_sal + 1) * 20
+			write(*, '(A)', advance='no') "-"
+		end do
+		print *
+    
+		! Isi tabel
+		do i = 1, n_pres
+			write(*, '(F20.2)', advance='no') pressure(i)
+			do j = 1, n_sal
+				write(*, '(F20.3)', advance='no') tf(i,j)
+			end do
+			print *
+		end do
+    
+		! Dealokasi array
+		deallocate(salinity)
+		deallocate(pressure)
+		deallocate(tf)
+    
+	end subroutine freezing_point_seawater
+
+	!*********************************************************************************************************** 
+	!===========================================================================================================
+	!-------------------------------SUB PROGRAM 6: SPECIFIC HEAT OF SEAWATER------------------------------------	
+	!===========================================================================================================		
+	!***********************************************************************************************************
+
+	subroutine specific_heat_of_seawater
+		implicit none
+    
+		! --- DEKLARASI VARIABEL ---
+		integer :: n_sal, i, j, k
+		integer, allocatable :: n_konversi(:)
+    
+		! Koefisien Cp(0,t,0) - Air Murni Permukaan
+		real(8) :: C0, C1, C2, C3, C4
+    
+		! Koefisien A dan B (Koreksi Salinitas Permukaan)
+		real(8) :: a0, a1, a2, b0, b1, b2
+    
+		! Koefisien Delta_1 Cp (Koreksi Tekanan Air Murni) - Persamaan 28
+		real(8) :: a_0, a_1, a_2, a_3, a_4
+		real(8) :: b_0, b_1, b_2, b_3, b_4
+		real(8) :: c0_c, c1_c, c2_c, c3_c
+    
+		! Koefisien Delta_2 Cp (Interaksi Tekanan-Salinitas) - Persamaan 29
+		real(8) :: d0, d1, d2, d3, d4
+		real(8) :: e0, e1, e2
+		real(8) :: f0, f1, f2, f3
+		real(8) :: g0, h0, h1, h2, j1
+    
+		! Array Data
+		real(8), allocatable :: salinity(:)
+		real(8), allocatable :: temperature(:,:), pressure(:,:), cp(:,:)
+    
+		! Variabel Perhitungan Sementara
+		real(8) :: Cp0, A_func, B_func, S, t, p
+		real(8) :: delta_Cp1, delta_Cp2
+		real(8) :: term_p1, term_p2, term_p3
+		integer :: max_konversi
+    
+		! --- DEFINISI KOEFISIEN (Sesuai Dokumen Millero et al. 1981) ---
+    
+		! 1. Koefisien Cp(0,t,0)
+		C0 = 4217.4d0
+		C1 = -3.720283d0
+		C2 = 0.1412855d0
+		C3 = -2.654387d-3
+		C4 = 2.093236d-5
+    
+		! 2. Koefisien A (Salinitas)
+		a0 = -7.643575d0
+		a1 = 0.1072763d0
+		a2 = -1.38385d-3
+    
+		! 3. Koefisien B (Salinitas)
+		b0 = 0.1770383d0
+		b1 = -4.07718d-3
+		b2 = 5.148d-5
+    
+		! 4. Koefisien Delta_1 Cp (Tekanan Air Murni)
+		a_0 = -4.9592d-1
+		a_1 = 1.45747d-2
+		a_2 = -3.13885d-4
+		a_3 = 2.0357d-6
+		a_4 = 1.7168d-8
+    
+		b_0 = 2.4931d-4
+		b_1 = -1.08645d-5
+		b_2 = 2.87533d-7
+		b_3 = -4.0027d-9
+		b_4 = 2.2956d-11
+    
+		c0_c = -5.422d-8
+		c1_c = 2.6380d-9
+		c2_c = -6.5637d-11
+		c3_c = 6.136d-13
+    
+		! 5. Koefisien Delta_2 Cp (Interaksi Tekanan-Salinitas)
+		d0 = 4.9247d-3
+		d1 = -1.28315d-4
+		d2 = 9.802d-7
+		d3 = 2.5941d-8
+		d4 = -2.9179d-10
+    
+		e0 = -1.2331d-4
+		e1 = -1.517d-6
+		e2 = 3.122d-8
+    
+		f0 = -2.9558d-6
+		f1 = 1.17054d-7
+		f2 = -2.3905d-9
+		f3 = 1.8448d-11
+    
+		g0 = 9.971d-8
+    
+		h0 = 5.540d-10
+		h1 = -1.7682d-11
+		h2 = 3.513d-13
+    
+		j1 = -1.4300d-12
+    
+		! --- MULAI PROGRAM UTAMA ---
+    
+		print *, "=========================================================="
+		print *, "  PROGRAM PERHITUNGAN PANAS SPESIFIK AIR LAUT"
+		print *, "=========================================================="
+		print *
+    
+		! Input Jumlah Salinitas
+		print *, "Masukkan di berapa kondisi salinitas:"
+		read *, n_sal
+    
+		! Alokasi Array Salinitas dan Jumlah Konversi
+		allocate(salinity(n_sal))
+		allocate(n_konversi(n_sal))
+    
+		! Input Nilai Salinitas
+		print *
+		print *, "========== INPUT NILAI SALINITY (PSS-78) =========="
+		do i = 1, n_sal
+			print *, "Salinity ke-", i, " :"
+			read *, salinity(i)
+		end do
+    
+		! Tentukan jumlah konversi untuk setiap salinitas
+		print *
+		print *, "========== JUMLAH KONVERSI PER SALINITAS =========="
+		max_konversi = 0
+		do i = 1, n_sal
+			print *, "Mau ada berapa kali konversi untuk Salinity", salinity(i), "?"
+			read *, n_konversi(i)
+			if (n_konversi(i) > max_konversi) max_konversi = n_konversi(i)
+		end do
+    
+		! Alokasi array temperature, pressure, dan cp
+		allocate(temperature(n_sal, max_konversi))
+		allocate(pressure(n_sal, max_konversi))
+		allocate(cp(n_sal, max_konversi))
+    
+		! Inisialisasi array dengan nilai nol
+		temperature = 0.0d0
+		pressure = 0.0d0
+		cp = 0.0d0
+    
+		! Input Temperature dan Pressure untuk setiap Salinitas
+		do i = 1, n_sal
+			print *
+			print *, "========== DATA UNTUK SALINITY:", salinity(i), " =========="
+			print *, "Masukkan", n_konversi(i), "pasang Temperature dan Pressure"
+			print *
+        
+			do j = 1, n_konversi(i)
+				print *, "  --- Konversi ke-", j, " ---"
+				print *, "  Temperature (Celcius):"
+				read *, temperature(i, j)
+				print *, "  Pressure (decibars):"
+				read *, pressure(i, j)
+			end do
+		end do
+    
+		! --- LOOP PERHITUNGAN ---
+		do i = 1, n_sal
+			S = salinity(i)
+        
+			do j = 1, n_konversi(i)
+				t = temperature(i, j)
+				p = pressure(i, j) / 10.0d0  ! Konversi decibar ke bar
+            
+				! 1. Hitung Cp(0,t,0) - Air Murni pada P=0
+				Cp0 = C0 + C1*t + C2*t**2 + C3*t**3 + C4*t**4
+            
+				! 2. Hitung bagian Salinitas pada P=0
+				A_func = a0 + a1*t + a2*t**2
+				B_func = b0 + b1*t + b2*t**2
+            
+				! Nilai dasar pada permukaan (Surface)
+				cp(i, j) = Cp0 + A_func*S + B_func*S**(1.5d0)
+            
+				! Tambahkan koreksi tekanan jika P > 0
+				if (p > 0.0d0) then
+                
+					! --- BAGIAN 1: Delta_1 Cp (Koreksi Tekanan Air Murni) ---
+					delta_Cp1 = (a_0 + a_1*t + a_2*t**2 + a_3*t**3 + a_4*t**4) * p + &
+								(b_0 + b_1*t + b_2*t**2 + b_3*t**3 + b_4*t**4) * p**2 + &
+								(c0_c + c1_c*t + c2_c*t**2 + c3_c*t**3) * p**3
+                            
+					! --- BAGIAN 2: Delta_2 Cp (Interaksi Salinitas-Tekanan) ---
+					term_p1 = ( (d0 + d1*t + d2*t**2 + d3*t**3 + d4*t**4) * S + &
+								(e0 + e1*t + e2*t**2) * S**(1.5d0) ) * p
+                
+					term_p2 = ( (f0 + f1*t + f2*t**2 + f3*t**3) * S + &
+								g0 * S**(1.5d0) ) * p**2
+                            
+					term_p3 = ( (h0 + h1*t + h2*t**2) * S + &
+								j1 * t * S**(1.5d0) ) * p**3
+                
+					delta_Cp2 = term_p1 + term_p2 + term_p3
+                
+					! Total Cp = Surface + Delta1 + Delta2
+					cp(i, j) = cp(i, j) + delta_Cp1 + delta_Cp2
+                
+				end if
+			end do
+		end do
+    
+		! --- MENAMPILKAN HASIL ---
+		do i = 1, n_sal
+			print *
+			print *
+        
+			! Cetak garis atas (lebar total = 5 + 20 + 20 + 20 = 65)
+			do k = 1, 65
+				write(*, '(A)', advance='no') "="
+			end do
+			print *
+        
+			! Teks "HASIL PERHITUNGAN Cp" di tengah (33 karakter di tengah 65)
+			write(*, '(A)', advance='no') " "
+			do k = 1, 15
+				write(*, '(A)', advance='no') " "
+			end do
+			print *, "HASIL PERHITUNGAN Cp (J/(kg C))"
+        
+			! Teks "SALINITY: XX.XX" di tengah
+			write(*, '(A)', advance='no') " "
+			do k = 1, 23
+				write(*, '(A)', advance='no') " "
+			end do
+			write(*, '(A,F6.2)') "SALINITY: ", salinity(i)
+        
+			do k = 1, 65
+				write(*, '(A)', advance='no') "="
+			end do
+			print *
+			print *
+        
+			! Header Tabel
+			write(*, '(A5,A20,A20,A20)') "No.", "Temperature (C)", "Pressure (dbar)", "Cp (J/kg.C)"
+        
+			! Garis pemisah header
+			do k = 1, 65
+				write(*, '(A)', advance='no') "-"
+			end do
+			print *
+        
+			! Isi Tabel
+			do j = 1, n_konversi(i)
+				write(*, '(I5,F20.2,F20.2,F20.4)') j, temperature(i,j), pressure(i,j), cp(i,j)
+			end do
+        
+			! Garis bawah
+			do k = 1, 65
+				write(*, '(A)', advance='no') "="
+			end do
+			print *
+		end do
+    
+		print *
+    
+		! Dealokasi array
+		if (allocated(salinity)) deallocate(salinity)
+		if (allocated(n_konversi)) deallocate(n_konversi)
+		if (allocated(temperature)) deallocate(temperature)
+		if (allocated(pressure)) deallocate(pressure)
+		if (allocated(cp)) deallocate(cp)
+    
+	end subroutine specific_heat_of_seawater
+	
+	!*********************************************************************************************************** 
+	!===========================================================================================================
+	!---------------------------------SUB PROGRAM 7: ADIABATIC LAPSE RATE---------------------------------------	
+	!===========================================================================================================		
+	!*********************************************************************************************************** 
+
+	subroutine adiabatic_lapse_rate
+		implicit none
+    
+		! --- DEKLARASI VARIABEL ---
+		integer :: n_sal, i, j, k, l, m
+		integer :: n_suhu, n_tekanan
+    
+		! Variabel untuk formatting tampilan
+		integer :: lebar_kolom_kiri, lebar_kolom_data
+		integer :: lebar_total, padding, panjang_judul
+    
+		! Koefisien Persamaan (31)
+		real(8) :: a0, a1, a2, a3
+		real(8) :: b0, b1
+		real(8) :: c0, c1, c2, c3
+		real(8) :: d0, d1
+		real(8) :: e0, e1, e2
+    
+		! Array Data
+		real(8), allocatable :: salinity(:)
+		real(8), allocatable :: arr_suhu(:)
+		real(8), allocatable :: arr_tekanan(:)
+    
+		! Variabel Hitungan
+		real(8) :: S, T, P, DS
+		real(8) :: term_A, term_B, term_C, term_D, term_E
+		real(8) :: Gamma_val, Gamma_out
+    
+		! --- DEFINISI KOEFISIEN (Sesuai Gambar Eq 31) ---
+		a0 =  3.5803d-5
+		a1 =  8.5258d-6
+		a2 = -6.8360d-8
+		a3 =  6.6228d-10
+
+		b0 =  1.8932d-6
+		b1 = -4.2393d-8
+
+		c0 =  1.8741d-8
+		c1 = -6.7795d-10
+		c2 =  8.7330d-12
+		c3 = -5.4481d-14
+
+		d0 = -1.1351d-10
+		d1 =  2.7759d-12
+
+		e0 = -4.6206d-13
+		e1 =  1.8676d-14
+		e2 = -2.1687d-16
+    
+		! --- SETTING LEBAR KOLOM ---
+		lebar_kolom_kiri = 12   
+		lebar_kolom_data = 15   
+    
+		! --- PROGRAM UTAMA ---
+		print *, "=========================================================="
+		print *, "             PROGRAM ADIABATIC LAPSE RATE"
+		print *, "=========================================================="
+		print *
+    
+		print *, "Masukkan jumlah kondisi salinitas:"
+		read *, n_sal
+		allocate(salinity(n_sal))
+    
+		print *, "--- INPUT SALINITY ---"
+		do i = 1, n_sal
+			print *, "Salinity ke-", i, " :"
+			read *, salinity(i)
+		end do
+    
+		print *
+		print *, "--- PENGATURAN MATRIKS ---"
+		print *, "Berapa variasi Suhu (Temperature/Kolom)?"
+		read *, n_suhu
+		print *, "Berapa variasi Tekanan (Pressure/Baris)?"
+		read *, n_tekanan
+    
+		allocate(arr_suhu(n_suhu))
+		allocate(arr_tekanan(n_tekanan))
+    
+		print *
+		print *, "Input Nilai Suhu (C):"
+		do i = 1, n_suhu
+			print *, "  Suhu ke-", i, " :"
+			read *, arr_suhu(i)
+		end do
+
+		print *
+		print *, "Input Nilai Tekanan (db):"
+		do i = 1, n_tekanan
+			print *, "  Tekanan ke-", i, " :"
+			read *, arr_tekanan(i)
+		end do
+    
+		! Hitung Lebar Total untuk Garis
+		lebar_total = lebar_kolom_kiri + (n_suhu * lebar_kolom_data)
+    
+		! --- LOOP OUTPUT UTAMA (Per Salinitas) ---
+		do i = 1, n_sal
+			S = salinity(i)
+			DS = S - 35.0d0
+        
+			print *
+			print *
+        
+			! 1. GARIS ATAS
+			do m = 1, lebar_total
+				write(*, '(A)', advance='no') "="
+			end do
+			print *
+        
+			! 2. JUDUL TENGAH
+			panjang_judul = 44 
+			padding = (lebar_total - panjang_judul) / 2
+			do m = 1, padding
+				write(*, '(A)', advance='no') " "
+			end do
+			print *, "ADIABATIC LAPSE RATE GAMMA [C/1000 db]"
+        
+			! 3. SUB-JUDUL TENGAH (Salinity)
+			panjang_judul = 16 
+			padding = (lebar_total - panjang_judul) / 2
+			do m = 1, padding
+				write(*, '(A)', advance='no') " "
+			end do
+			write(*, '(A,F6.2)') "SALINITY: ", S
+        
+			! 4. GARIS PEMISAH HEADER
+			do m = 1, lebar_total
+				write(*, '(A)', advance='no') "-"
+			end do
+			print *
+        
+			! 5. HEADER KOLOM (TEMP) - FIXED FORMAT
+			write(*, '(A12)', advance='no') "PRESS (db) |" 
+        
+			! Format yang konsisten dengan data: total 15 karakter per kolom
+			do j = 1, n_suhu
+				write(*, '("    Temp ", F6.1)', advance='no') arr_suhu(j)
+			end do
+			print *
+        
+			! 6. GARIS BAWAH HEADER
+			do m = 1, lebar_total
+				write(*, '(A)', advance='no') "-"
+			end do
+			print *
+        
+			! 7. ISI DATA (Baris per Baris Tekanan)
+			do k = 1, n_tekanan  
+				P = arr_tekanan(k)
+            
+				! Cetak Label Tekanan (Kiri) - Total 12 Karakter
+				write(*, '(I9, "  |")', advance='no') int(P)
+            
+				! Loop Kolom (Suhu) 
+				do l = 1, n_suhu
+					T = arr_suhu(l)
+                
+					! Rumus Eq 31
+					term_A = a0 + (a1 * T) + (a2 * T**2) + (a3 * T**3)
+					term_B = (b0 + (b1 * T)) * DS
+					term_C = c0 + (c1 * T) + (c2 * T**2) + (c3 * T**3)
+					term_D = (d0 + (d1 * T)) * DS
+					term_E = e0 + (e1 * T) + (e2 * T**2)
+                
+					Gamma_val = term_A + term_B + (term_C + term_D)*P + term_E*(P**2)
+                
+					! Konversi ke satuan tabel
+					Gamma_out = Gamma_val * 1000.0d0
+                
+					! Cetak Data - Total 15 Karakter
+					write(*, '(F15.4)', advance='no') Gamma_out
+				end do
+            
+				! Pindah ke baris baru setelah satu baris tekanan selesai
+				print * 
+			end do
+        
+			! 8. GARIS PENUTUP BAWAH
+			do m = 1, lebar_total
+				write(*, '(A)', advance='no') "="
+			end do
+			print *
+		end do
+    
+		print *
+		! Dealokasi Memori
+		if (allocated(salinity)) deallocate(salinity)
+		if (allocated(arr_suhu)) deallocate(arr_suhu)
+		if (allocated(arr_tekanan)) deallocate(arr_tekanan)
+
+	end subroutine adiabatic_lapse_rate
+
+	!*********************************************************************************************************** 
+	!===========================================================================================================
+	!-----------------------------------SUB PROGRAM 8: POTENTIAL TEMPERATURE------------------------------------
+	!===========================================================================================================		
+	!***********************************************************************************************************
+
+		subroutine potential_temperature
+		implicit none
+    
+		! --- DEKLARASI VARIABEL ---
+		integer :: n_sal, i, j, k, l, m
+		integer :: n_suhu, n_tekanan
+    
+		! Variabel untuk pengaturan tampilan output
+		integer :: lebar_kolom_kiri, lebar_kolom_data
+		integer :: lebar_total, padding, panjang_judul
+    
+		! Array penyimpan data
+		real(8), allocatable :: salinity(:)
+		real(8), allocatable :: arr_suhu(:)
+		real(8), allocatable :: arr_tekanan(:)
+    
+		! Variabel Fisika & Perhitungan Integrasi
+		real(8) :: S, T, P, Pr
+		real(8) :: H, DS
+		real(8) :: XK, Q
+		real(8) :: t_accum, p_accum ! Variabel akumulasi suhu & tekanan
+		real(8) :: theta_result
+    
+		! Variabel bantuan untuk hitung Gamma (Lapse Rate)
+		real(8) :: cur_t, cur_p
+		real(8) :: term_A, term_B, term_C, term_D, term_E
+		real(8) :: gamma_val
+    
+		! Koefisien Polinomial Gamma (Referensi: Bryden 1973)
+		real(8) :: a0, a1, a2, a3
+		real(8) :: b0, b1
+		real(8) :: c0, c1, c2, c3
+		real(8) :: d0, d1
+		real(8) :: e0, e1, e2
+    
+		! --- DEFINISI KOEFISIEN ---
+		a0 =  3.5803d-5
+		a1 =  8.5258d-6
+		a2 = -6.8360d-8
+		a3 =  6.6228d-10
+		b0 =  1.8932d-6
+		b1 = -4.2393d-8
+		c0 =  1.8741d-8
+		c1 = -6.7795d-10
+		c2 =  8.7330d-12
+		c3 = -5.4481d-14
+		d0 = -1.1351d-10
+		d1 =  2.7759d-12
+		e0 = -4.6206d-13
+		e1 =  1.8676d-14
+		e2 = -2.1687d-16
+    
+		! --- PENGATURAN FORMAT TAMPILAN ---
+		lebar_kolom_kiri = 12   
+		lebar_kolom_data = 15   
+		Pr = 0.0d0 ! Tekanan Referensi (biasanya 0 di permukaan)
+    
+		! --- INPUT DATA ---
+		print *, "=========================================================="
+		print *, "  PROGRAM POTENTIAL TEMPERATURE (Metode Runge-Kutta Gill)"
+		print *, "=========================================================="
+		print *
+    
+		print *, "Masukkan jumlah kondisi salinitas:"
+		read *, n_sal
+		allocate(salinity(n_sal))
+    
+		print *, "--- INPUT SALINITY ---"
+		do i = 1, n_sal
+			print *, "Salinity ke-", i, " :"
+			read *, salinity(i)
+		end do
+    
+		print *
+		print *, "--- MATRIKS SUHU & TEKANAN ---"
+		print *, "Jumlah Variasi Suhu (Kolom):"
+		read *, n_suhu
+		print *, "Jumlah Variasi Tekanan (Baris):"
+		read *, n_tekanan
+    
+		allocate(arr_suhu(n_suhu))
+		allocate(arr_tekanan(n_tekanan))
+    
+		print *
+		print *, "Input Nilai Suhu (C):"
+		do i = 1, n_suhu
+			print *, "  Suhu ke-", i, " :"
+			read *, arr_suhu(i)
+		end do
+
+		print *
+		print *, "Input Nilai Tekanan (db):"
+		do i = 1, n_tekanan
+			print *, "  Tekanan ke-", i, " :"
+			read *, arr_tekanan(i)
+		end do
+    
+		lebar_total = lebar_kolom_kiri + (n_suhu * lebar_kolom_data)
+    
+		! --- MULAI PERHITUNGAN ---
+		do i = 1, n_sal
+			S = salinity(i)
+			DS = S - 35.0d0
+        
+			print *
+			print *
+			! Membuat garis hiasan header
+			do m = 1, lebar_total
+				write(*, '(A)', advance='no') "="
+			end do
+			print *
+        
+			panjang_judul = 48
+			padding = (lebar_total - panjang_judul) / 2
+			do m = 1, padding
+				write(*, '(A)', advance='no') " "
+			end do
+			print *, "POTENTIAL TEMPERATURE theta C (Ref. Pres. = 0.0)"
+        
+			panjang_judul = 16 
+			padding = (lebar_total - panjang_judul) / 2
+			do m = 1, padding
+				write(*, '(A)', advance='no') " "
+			end do
+			write(*, '(A,F6.2)') "SALINITY: ", S
+        
+			do m = 1, lebar_total
+				write(*, '(A)', advance='no') "-"
+			end do
+			print *
+        
+			! Header untuk kolom suhu
+			write(*, '(A12)', advance='no') "PRESS (db) |" 
+			do j = 1, n_suhu
+				write(*, '("    Temp ", F6.1)', advance='no') arr_suhu(j)
+			end do
+			print *
+        
+			do m = 1, lebar_total
+				write(*, '(A)', advance='no') "-"
+			end do
+			print *
+        
+			! Loop Baris (Variabel Tekanan)
+			do k = 1, n_tekanan  
+				P = arr_tekanan(k)
+				write(*, '(I9, "  |")', advance='no') int(P)
+            
+				! Loop Kolom (Variabel Suhu)
+				do l = 1, n_suhu
+					T = arr_suhu(l)
+                
+					! === ALGORITMA RUNGE-KUTTA-GILL ===
+					if (abs(P - Pr) < 1.0d-6) then
+						! Jika tekanan sama dengan referensi, suhu tidak berubah
+						theta_result = T
+					else
+						H = Pr - P ! Jarak/Langkah Tekanan
+                    
+						! Inisialisasi variabel akumulasi
+						t_accum = T
+						p_accum = P
+						Q = 0.0d0
+                    
+						! --- TAHAP 1 ---
+						cur_t = t_accum
+						cur_p = p_accum
+                    
+						! Hitung nilai Gamma (Polinomial)
+						term_A = a0 + (a1*cur_t) + (a2*cur_t**2) + (a3*cur_t**3)
+						term_B = (b0 + (b1*cur_t)) * DS
+						term_C = c0 + (c1*cur_t) + (c2*cur_t**2) + (c3*cur_t**3)
+						term_D = (d0 + (d1*cur_t)) * DS
+						term_E = e0 + (e1*cur_t) + (e2*cur_t**2)
+						gamma_val = term_A + term_B + (term_C + term_D)*cur_p + term_E*(cur_p**2)
+                    
+						XK = H * gamma_val
+                    
+						! Update Gill Tahap 1
+						t_accum = t_accum + 0.5d0 * XK
+						Q = XK
+						p_accum = p_accum + 0.5d0 * H
+                    
+						! --- TAHAP 2 ---
+						cur_t = t_accum
+						cur_p = p_accum
+                    
+						term_A = a0 + (a1*cur_t) + (a2*cur_t**2) + (a3*cur_t**3)
+						term_B = (b0 + (b1*cur_t)) * DS
+						term_C = c0 + (c1*cur_t) + (c2*cur_t**2) + (c3*cur_t**3)
+						term_D = (d0 + (d1*cur_t)) * DS
+						term_E = e0 + (e1*cur_t) + (e2*cur_t**2)
+						gamma_val = term_A + term_B + (term_C + term_D)*cur_p + term_E*(cur_p**2)
+                    
+						XK = H * gamma_val
+                    
+						! Update Gill Tahap 2
+						t_accum = t_accum + 0.29289322d0 * (XK - Q)
+						Q = 0.58578644d0 * XK + 0.121320344d0 * Q
+                    
+						! --- TAHAP 3 ---
+						cur_t = t_accum
+						cur_p = p_accum ! Tekanan masih berada di titik tengah
+                    
+						term_A = a0 + (a1*cur_t) + (a2*cur_t**2) + (a3*cur_t**3)
+						term_B = (b0 + (b1*cur_t)) * DS
+						term_C = c0 + (c1*cur_t) + (c2*cur_t**2) + (c3*cur_t**3)
+						term_D = (d0 + (d1*cur_t)) * DS
+						term_E = e0 + (e1*cur_t) + (e2*cur_t**2)
+						gamma_val = term_A + term_B + (term_C + term_D)*cur_p + term_E*(cur_p**2)
+                    
+						XK = H * gamma_val
+                    
+						! Update Gill Tahap 3
+						t_accum = t_accum + 1.707106781d0 * (XK - Q)
+						Q = 3.414213562d0 * XK - 4.121320344d0 * Q
+						p_accum = p_accum + 0.5d0 * H ! Tekanan dimajukan ke titik akhir
+                    
+						! --- TAHAP 4 ---
+						cur_t = t_accum
+						cur_p = p_accum
+                    
+						term_A = a0 + (a1*cur_t) + (a2*cur_t**2) + (a3*cur_t**3)
+						term_B = (b0 + (b1*cur_t)) * DS
+						term_C = c0 + (c1*cur_t) + (c2*cur_t**2) + (c3*cur_t**3)
+						term_D = (d0 + (d1*cur_t)) * DS
+						term_E = e0 + (e1*cur_t) + (e2*cur_t**2)
+						gamma_val = term_A + term_B + (term_C + term_D)*cur_p + term_E*(cur_p**2)
+                    
+						XK = H * gamma_val
+                    
+						! Hasil Akhir (Menggunakan Rumus Gill)
+						theta_result = t_accum + (XK - 2.0d0 * Q) / 6.0d0
+					end if
+                
+					write(*, '(F15.4)', advance='no') theta_result
+				end do
+				print *
+				end do
+        
+			do m = 1, lebar_total
+				write(*, '(A)', advance='no') "="
+			end do
+			print *
+		end do
+    
+		! Bersihkan memori (Deallocate)
+		if (allocated(salinity)) deallocate(salinity)
+		if (allocated(arr_suhu)) deallocate(arr_suhu)
+		if (allocated(arr_tekanan)) deallocate(arr_tekanan)
+
+	end subroutine potential_temperature
+
+	!*********************************************************************************************************** 
+	!===========================================================================================================
+	!--------------------------------SUB PROGRAM 9: SOUND SPEED IN SEAWATER-------------------------------------	
+	!===========================================================================================================		
+	!***********************************************************************************************************
+
+	subroutine sound_speed_seawater
+		implicit none
+    
+		! --- DEKLARASI VARIABEL ---
+		integer :: n_sal, i, j, k, l, m
+		integer :: n_suhu, n_tekanan
+    
+		! Variabel untuk pengaturan tampilan output
+		integer :: lebar_kolom_kiri, lebar_kolom_data
+		integer :: lebar_total, padding, panjang_judul
+    
+		! Array penyimpan data
+		real(8), allocatable :: salinity(:)
+		real(8), allocatable :: arr_suhu(:)
+		real(8), allocatable :: arr_tekanan(:)
+    
+		! Variabel Fisika & Perhitungan
+		real(8) :: S, T, P
+		real(8) :: SR, P_bar
+		real(8) :: C_w, A_term, B_term, D_term
+		real(8) :: sound_speed
+    
+		! Koefisien untuk C_w(t,p) - Pure Water Term
+		real(8) :: C00, C01, C02, C03, C04, C05
+		real(8) :: C10, C11, C12, C13, C14
+		real(8) :: C20, C21, C22, C23, C24
+		real(8) :: C30, C31, C32
+    
+		! Koefisien untuk A(t,p) - Salinity Term
+		real(8) :: A00, A01, A02, A03, A04
+		real(8) :: A10, A11, A12, A13, A14
+		real(8) :: A20, A21, A22, A23
+		real(8) :: A30, A31, A32
+    
+		! Koefisien untuk B(t,p) - S^(3/2) Term
+		real(8) :: B00, B01, B10, B11
+    
+		! Koefisien untuk D(t,p) - S^2 Term
+		real(8) :: D00, D10
+    
+		! --- DEFINISI KOEFISIEN (Chen and Millero, 1977) ---
+		! Koefisien C_w (Pure Water)
+		C00 = 1402.388d0
+		C01 = 5.03711d0
+		C02 = -5.80852d-2
+		C03 = 3.3420d-4
+		C04 = -1.47800d-6
+		C05 = 3.1464d-9
+    
+		C10 = 0.153563d0
+		C11 = 6.8982d-4
+		C12 = -8.1788d-6
+		C13 = 1.3621d-7
+		C14 = -6.1185d-10
+    
+		C20 = 3.1260d-5
+		C21 = -1.7107d-6
+		C22 = 2.5974d-8
+		C23 = -2.5335d-10
+		C24 = 1.0405d-12
+    
+		C30 = -9.7729d-9
+		C31 = 3.8504d-10
+		C32 = -2.3643d-12
+    
+		! Koefisien A (Salinity Effect)
+		A00 = 1.389d0
+		A01 = -1.262d-2
+		A02 = 7.164d-5
+		A03 = 2.006d-6
+		A04 = -3.21d-8
+    
+		A10 = 9.4742d-5
+		A11 = -1.2580d-5
+		A12 = -6.4885d-8
+		A13 = 1.0507d-8
+		A14 = -2.0122d-10
+    
+		A20 = -3.9064d-7
+		A21 = 9.1041d-9
+		A22 = -1.6002d-10
+		A23 = 7.988d-12
+    
+		A30 = 1.100d-10
+		A31 = 6.649d-12
+		A32 = -3.389d-13
+    
+		! Koefisien B (S^(3/2) Term)
+		B00 = -1.922d-2
+		B01 = -4.42d-5
+		B10 = 7.3637d-5
+		B11 = 1.7945d-7
+    
+		! Koefisien D (S^2 Term)
+		D00 = 1.727d-3
+		D10 = -7.9836d-6
+    
+		! --- PENGATURAN FORMAT TAMPILAN ---
+		lebar_kolom_kiri = 12   
+		lebar_kolom_data = 15   
+    
+		! --- INPUT DATA ---
+		print *, "=========================================================="
+		print *, "                 SOUND SPEED IN SEAWATER"
+		print *, "=========================================================="
+		print *
+    
+		print *, "Masukkan jumlah kondisi salinitas:"
+		read *, n_sal
+		allocate(salinity(n_sal))
+    
+		print *, "--- INPUT SALINITY (PSS-78) ---"
+		do i = 1, n_sal
+			print *, "Salinity ke-", i, " :"
+			read *, salinity(i)
+		end do
+    
+		print *
+		print *, "--- MATRIKS SUHU & TEKANAN ---"
+		print *, "Jumlah Variasi Suhu (Kolom):"
+		read *, n_suhu
+		print *, "Jumlah Variasi Tekanan (Baris):"
+		read *, n_tekanan
+    
+		allocate(arr_suhu(n_suhu))
+		allocate(arr_tekanan(n_tekanan))
+    
+		print *
+		print *, "Input Nilai Suhu (deg Celsius, IPTS-68):"
+		do i = 1, n_suhu
+			print *, "  Suhu ke-", i, " :"
+			read *, arr_suhu(i)
+		end do
+
+		print *
+		print *, "Input Nilai Tekanan (decibars):"
+		do i = 1, n_tekanan
+			print *, "  Tekanan ke-", i, " :"
+			read *, arr_tekanan(i)
+		end do
+    
+		lebar_total = lebar_kolom_kiri + (n_suhu * lebar_kolom_data)
+    
+		! --- MULAI PERHITUNGAN ---
+		do i = 1, n_sal
+			S = salinity(i)
+			SR = sqrt(abs(S))
+        
+			print *
+			print *
+			! Membuat garis hiasan header
+			do m = 1, lebar_total
+				write(*, '(A)', advance='no') "="
+			end do
+			print *
+        
+			panjang_judul = 32
+			padding = (lebar_total - panjang_judul) / 2
+			do m = 1, padding
+				write(*, '(A)', advance='no') " "
+			end do
+			print *, "SOUND SPEED IN SEAWATER U [m/s]"
+        
+			panjang_judul = 27 + 4  ! "SALINITY (PSS-78): " + "XX.XX" (4 digit)
+			padding = (lebar_total - panjang_judul) / 2
+			do m = 1, padding
+				write(*, '(A)', advance='no') " "
+			end do
+			write(*, '(A,F6.2)') "SALINITY (PSS-78): ", S
+        
+			do m = 1, lebar_total
+				write(*, '(A)', advance='no') "-"
+			end do
+			print *
+        
+			! Header untuk kolom suhu
+			write(*, '(A12)', advance='no') "PRESS (db) |" 
+			do j = 1, n_suhu
+				write(*, '("    Temp ", F6.1)', advance='no') arr_suhu(j)
+			end do
+			print *
+        
+			do m = 1, lebar_total
+				write(*, '(A)', advance='no') "-"
+			end do
+			print *
+        
+			! Loop Baris (Variabel Tekanan)
+			do k = 1, n_tekanan  
+				P = arr_tekanan(k)
+				P_bar = P / 10.0d0  ! Convert decibars to bars
+            
+				write(*, '(I9, "  |")', advance='no') int(P)
+            
+				! Loop Kolom (Variabel Suhu)
+				do l = 1, n_suhu
+					T = arr_suhu(l)
+                
+					! === PERHITUNGAN SOUND SPEED ===
+					! Formula: U(S,t,p) = C_w(t,p) + A(t,p)*S + B(t,p)*S^(3/2) + D(t,p)*S^2
+                
+					! --- Hitung C_w(t,p): Pure Water Term ---
+					C_w = C00 + C01*T + C02*T**2 + C03*T**3 + C04*T**4 + C05*T**5 &
+						+ (C10 + C11*T + C12*T**2 + C13*T**3 + C14*T**4) * P_bar &
+						+ (C20 + C21*T + C22*T**2 + C23*T**3 + C24*T**4) * P_bar**2 &
+						+ (C30 + C31*T + C32*T**2) * P_bar**3
+                
+					! --- Hitung A(t,p): Salinity Linear Term ---
+					A_term = (A00 + A01*T + A02*T**2 + A03*T**3 + A04*T**4) &
+						   + (A10 + A11*T + A12*T**2 + A13*T**3 + A14*T**4) * P_bar &
+						   + (A20 + A21*T + A22*T**2 + A23*T**3) * P_bar**2 &
+						   + (A30 + A31*T + A32*T**2) * P_bar**3
+                
+					! --- Hitung B(t,p): S^(3/2) Term ---
+					B_term = (B00 + B01*T) + (B10 + B11*T) * P_bar
+                
+					! --- Hitung D(t,p): S^2 Term ---
+					D_term = D00 + D10 * P_bar
+                
+					! --- Sound Speed Total ---
+					sound_speed = C_w + A_term*S + B_term*(SR**3) + D_term*S**2
+                
+					write(*, '(F15.2)', advance='no') sound_speed
+				end do
+				print *
+			end do
+        
+			do m = 1, lebar_total
+				write(*, '(A)', advance='no') "="
+			end do
+			print *
+		end do
+    
+    
+		! Bersihkan memori (Deallocate)
+		if (allocated(salinity)) deallocate(salinity)
+		if (allocated(arr_suhu)) deallocate(arr_suhu)
+		if (allocated(arr_tekanan)) deallocate(arr_tekanan)
+
+	end subroutine sound_speed_seawater
+	
+
+end program perhitungan_parameter_oseanografi
